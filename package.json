@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "vercel-build": "prisma generate && prisma db push --accept-data-loss && next build",
+    "postinstall": "prisma generate",
     "start": "next start",
     "typecheck": "tsc --noEmit"
   },

@@ -4,16 +4,25 @@ Notes encrypted **in your browser** before they touch the network. The server
 authenticates you but stores only ciphertext it cannot read. Same core pattern
 as Bitwarden, deliberately small.
 
-## Run it
+## Run it locally
 
 ```bash
 npm install
-npx prisma generate
-npx prisma db push
+cp .env.example .env        # then set JWT_SECRET (openssl rand -base64 32)
+docker compose up -d        # a local Postgres, or point DATABASE_URL anywhere
+npx prisma db push          # create the tables
 npm run dev
 ```
 
 Open http://localhost:3000 → create a vault → add a note.
+
+## Deploy (Vercel + Neon)
+
+1. Create a Postgres at [neon.tech](https://neon.tech) → copy the connection string.
+2. Import this repo at [vercel.com/new](https://vercel.com/new) (Next.js auto-detected).
+3. Env vars: `DATABASE_URL` (Neon), `JWT_SECRET` (`openssl rand -base64 32`).
+4. Deploy. The `vercel-build` script runs `prisma db push` automatically, so the
+   tables are created on first deploy — nothing else to do.
 
 **Prove it works:** open `npx prisma studio` → the `Note` table holds only
 base64 `iv` + `ciphertext`, no readable text. Or open DevTools → Network,
@@ -51,9 +60,7 @@ password + email
 - **No password reset — by design.** Zero-knowledge means the server can't
   recover your notes. A real product adds *user-controlled* recovery (recovery
   codes, an emergency-contact key) — read the Bitwarden security whitepaper.
-- **SQLite** is for local dev. Use PostgreSQL in production (swap the Prisma
-  `datasource`).
-- **`JWT_SECRET`** in `.env` is a placeholder — set a real one
+- **`JWT_SECRET`** must be a real secret — set one with
   (`openssl rand -base64 32`) and never commit it.
 - **Rate limiting is in-memory** — fine for one instance; production behind
   several instances needs a shared store (Redis).
