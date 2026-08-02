@@ -55,6 +55,11 @@ password + email
   the stored authKey, non-extractable AES key, per-note IVs.
 - Notes deletes and reads are scoped to the session user.
 - Generic login error (no account enumeration); basic auth rate limiting.
+- Strict security headers on every response (`next.config.mjs`): a CSP whose
+  `connect-src 'self'` means even an injected script can't exfiltrate a key
+  off-origin and whose `default-src 'self'` blocks any third-party script from
+  loading; plus HSTS, `X-Frame-Options: DENY` (no clickjacking the unlock
+  form), `nosniff`, and `Referrer-Policy: no-referrer`.
 
 **Demo shortcuts (change before real users):**
 - **No password reset — by design.** Zero-knowledge means the server can't
@@ -65,7 +70,15 @@ password + email
 - **Rate limiting is in-memory** — fine for one instance; production behind
   several instances needs a shared store (Redis).
 - **Host must enforce HTTPS.** The whole model assumes the JS you receive is
-  authentic; serve it only over TLS.
+  authentic; serve it only over TLS. (HSTS is already set, but the first hop
+  still needs TLS — Vercel provides it.)
+- **CSP still allows inline scripts** (`script-src 'unsafe-inline'`) because
+  Next's App Router streams hydration via inline `<script>` tags on
+  statically-generated pages. To fully lock `script-src`, move the CSP into
+  `middleware.ts` with a per-request nonce and render pages dynamically
+  (`export const dynamic = 'force-dynamic'`) — stricter, at the cost of static
+  generation. Left as inline because note content renders as auto-escaped React
+  text (no `dangerouslySetInnerHTML`), so the inline-XSS surface is small.
 
 ## The honest limitation
 
