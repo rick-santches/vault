@@ -15,6 +15,18 @@ model User {
   authHash  String
   createdAt DateTime @default(now())
   notes     Note[]
+
+  // --- Sharing keypair (ECDH P-256) ---
+  // publicKey is public by design — others use it to encrypt TO this user.
+  // The private key is stored ONLY as ciphertext (encPrivKey/encPrivKeyIv):
+  // AES-GCM-wrapped in the browser with the user's own encKey before upload,
+  // so the server holds a private key it can never use.
+  publicKey    String? // base64 SPKI of the ECDH public key
+  encPrivKey   String? // base64 AES-256-GCM ciphertext of the pkcs8 private key
+  encPrivKeyIv String? // base64 IV for encPrivKey
+
+  sharesSent     Share[] @relation("SharesSent")
+  sharesReceived Share[] @relation("SharesReceived")
 }
 
 model Note {
@@ -26,4 +38,22 @@ model Note {
   ciphertext String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+}
+
+// A note shared from one user to another. The ciphertext is locked with a
+// pairwise key derived in the browser from ECDH(sender_private, recipient_public)
+// — reproducible only by those two people. The server stores gibberish it can
+// neither read nor forge.
+model Share {
+  id         String   @id @default(cuid())
+  fromUserId String
+  fromUser   User     @relation("SharesSent", fields: [fromUserId], references: [id], onDelete: Cascade)
+  toUserId   String
+  toUser     User     @relation("SharesReceived", fields: [toUserId], references: [id], onDelete: Cascade)
+  iv         String
+  ciphertext String
+  createdAt  DateTime @default(now())
+
+  @@index([toUserId])
+  @@index([fromUserId])
 }

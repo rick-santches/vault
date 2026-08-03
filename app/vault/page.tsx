@@ -3,7 +3,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEncKey } from '@/components/key-context'
-import { decryptText, deriveKeys, encryptText, type EncryptedBlob } from '@/lib/crypto'
+import {
+  decryptFromPeer,
+  decryptText,
+  deriveKeys,
+  encryptForPeer,
+  encryptText,
+  generateShareKeypair,
+  keyFingerprint,
+  unwrapPrivateKey,
+  type EncryptedBlob,
+} from '@/lib/crypto'
 
 interface RawNote extends EncryptedBlob {
   id: string
@@ -16,13 +26,45 @@ interface DecryptedNote {
   text: string | null // null = couldn't decrypt with the current key
 }
 
+interface RawShare extends EncryptedBlob {
+  id: string
+  createdAt: string
+  peerEmail: string
+  peerPublicKey: string | null
+}
+
+interface DecryptedShare {
+  id: string
+  createdAt: string
+  peerEmail: string
+  text: string | null
+}
+
+type Tab = 'notes' | 'shared'
+
 export default function VaultPage() {
   const router = useRouter()
   const { encKey, setEncKey } = useEncKey()
   const [checking, setChecking] = useState(true)
+  const [tab, setTab] = useState<Tab>('notes')
+
+  // Personal notes
   const [notes, setNotes] = useState<DecryptedNote[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // Sharing keypair (private key held in memory only, like encKey)
+  const [privateKey, setPrivateKey] = useState<CryptoKey | null>(null)
+  const [fingerprint, setFingerprint] = useState<string | null>(null)
+  const [received, setReceived] = useState<DecryptedShare[]>([])
+  const [sent, setSent] = useState<DecryptedShare[]>([])
+
+  // Share form
+  const [shareEmail, setShareEmail] = useState('')
+  const [shareDraft, setShareDraft] = useState('')
+  const [shareBusy, setShareBusy] = useState(false)
+  const [shareError, setShareError] = useState<string | null>(null)
+  const [shareOk, setShareOk] = useState<string | null>(null)
 
   // Confirm there's a valid session; bounce to login if not.
   useEffect(() => {
@@ -39,28 +81,107 @@ export default function VaultPage() {
     }
   }, [router])
 
-  const loadNotes = useCallback(
-    async (key: CryptoKey): Promise<void> => {
-      const response = await fetch('/api/notes')
-      if (!response.ok) return
-      const { notes: raw } = (await response.json()) as { notes: RawNote[] }
-      const decrypted = await Promise.all(
-        raw.map(async (n) => {
-          try {
-            return { id: n.id, createdAt: n.createdAt, text: await decryptText(key, n) }
-          } catch {
-            return { id: n.id, createdAt: n.createdAt, text: null }
+  const loadNotes = useCallback(async (key: CryptoKey): Promise<void> => {
+    const response = await fetch('/api/notes')
+    if (!response.ok) return
+    const { notes: raw } = (await response.json()) as { notes: RawNote[] }
+    const decrypted = await Promise.all(
+      raw.map(async (n) => {
+        try {
+          return { id: n.id, createdAt: n.createdAt, text: await decryptText(key, n) }
+        } catch {
+          return { id: n.id, createdAt: n.createdAt, text: null }
+        }
+      }),
+    )
+    setNotes(decrypted)
+  }, [])
+
+  // After unlock, make sure this account has a sharing keypair. Existing
+  // accounts (created before sharing shipped) get one generated on first visit.
+  useEffect(() => {
+    if (!encKey || checking) return
+    let active = true
+    void (async () => {
+      try {
+        const res = await fetch('/api/keys')
+        const data = (await res.json()) as {
+          publicKey: string | null
+          encPrivKey: string | null
+          encPrivKeyIv: string | null
+        }
+        let publicKey = data.publicKey
+        let priv: CryptoKey
+        if (publicKey && data.encPrivKey && data.encPrivKeyIv) {
+          priv = await unwrapPrivateKey(encKey, {
+            encPrivKey: data.encPrivKey,
+            encPrivKeyIv: data.encPrivKeyIv,
+          })
+        } else {
+          const { wrapped, privateKey: fresh } = await generateShareKeypair(encKey)
+          const post = await fetch('/api/keys', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(wrapped),
+          })
+          if (!post.ok) {
+            // Someone set it first (409) — reload and unwrap the stored one.
+            const again = (await (await fetch('/api/keys')).json()) as typeof data
+            if (again.publicKey && again.encPrivKey && again.encPrivKeyIv) {
+              publicKey = again.publicKey
+              priv = await unwrapPrivateKey(encKey, {
+                encPrivKey: again.encPrivKey,
+                encPrivKeyIv: again.encPrivKeyIv,
+              })
+            } else {
+              return
+            }
+          } else {
+            publicKey = wrapped.publicKey
+            priv = fresh
           }
+        }
+        if (!active) return
+        setPrivateKey(priv)
+        if (publicKey) setFingerprint(await keyFingerprint(publicKey))
+      } catch {
+        /* sharing just stays unavailable; personal notes still work */
+      }
+    })()
+    return () => {
+      active = false
+    }
+  }, [encKey, checking])
+
+  const loadShares = useCallback(async (priv: CryptoKey): Promise<void> => {
+    const res = await fetch('/api/shares')
+    if (!res.ok) return
+    const data = (await res.json()) as { received: RawShare[]; sent: RawShare[] }
+    const decode = (list: RawShare[]) =>
+      Promise.all(
+        list.map(async (s) => {
+          let text: string | null = null
+          if (s.peerPublicKey) {
+            try {
+              text = await decryptFromPeer(priv, s.peerPublicKey, s)
+            } catch {
+              text = null
+            }
+          }
+          return { id: s.id, createdAt: s.createdAt, peerEmail: s.peerEmail, text }
         }),
       )
-      setNotes(decrypted)
-    },
-    [],
-  )
+    setReceived(await decode(data.received))
+    setSent(await decode(data.sent))
+  }, [])
 
   useEffect(() => {
     if (encKey && !checking) void loadNotes(encKey)
   }, [encKey, checking, loadNotes])
+
+  useEffect(() => {
+    if (privateKey) void loadShares(privateKey)
+  }, [privateKey, loadShares])
 
   async function addNote(): Promise<void> {
     if (!encKey || !draft.trim()) return
@@ -86,17 +207,66 @@ export default function VaultPage() {
     setNotes((prev) => prev.filter((n) => n.id !== id))
   }
 
+  async function shareNote(): Promise<void> {
+    setShareError(null)
+    setShareOk(null)
+    const to = shareEmail.trim().toLowerCase()
+    if (!privateKey) return setShareError('Your sharing key isn’t ready yet — try again in a moment.')
+    if (!to.includes('@')) return setShareError('Enter the recipient’s email.')
+    if (!shareDraft.trim()) return setShareError('Write something to share.')
+    setShareBusy(true)
+    try {
+      // Fetch the recipient's PUBLIC key, then lock the note to them locally.
+      const lookup = await fetch(`/api/users/public-key?email=${encodeURIComponent(to)}`)
+      if (!lookup.ok) {
+        const { error } = (await lookup.json()) as { error?: string }
+        setShareError(error ?? 'Could not find that recipient.')
+        return
+      }
+      const { publicKey } = (await lookup.json()) as { publicKey: string }
+      const blob = await encryptForPeer(privateKey, publicKey, shareDraft.trim())
+      const res = await fetch('/api/shares', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toEmail: to, ...blob }),
+      })
+      if (!res.ok) {
+        const { error } = (await res.json()) as { error?: string }
+        setShareError(error ?? 'Could not share.')
+        return
+      }
+      setShareDraft('')
+      setShareOk(`Shared with ${to}. Only they can open it.`)
+      await loadShares(privateKey)
+    } catch {
+      setShareError('Something went wrong.')
+    } finally {
+      setShareBusy(false)
+    }
+  }
+
+  async function deleteShare(id: string): Promise<void> {
+    await fetch(`/api/shares/${id}`, { method: 'DELETE' })
+    setReceived((prev) => prev.filter((s) => s.id !== id))
+    setSent((prev) => prev.filter((s) => s.id !== id))
+  }
+
   async function logout(): Promise<void> {
     await fetch('/api/logout', { method: 'POST' })
     setEncKey(null)
+    setPrivateKey(null)
     router.replace('/login')
   }
 
   if (checking) {
-    return <main className="flex min-h-screen items-center justify-center text-neutral-500">Checking session…</main>
+    return (
+      <main className="flex min-h-screen items-center justify-center text-neutral-500">
+        Checking session…
+      </main>
+    )
   }
 
-  // Session is valid but the key was lost on refresh — re-derive locally.
+  // Session is valid but the key was lost on refresh — re-derive it locally.
   if (!encKey) {
     return <UnlockForm onUnlocked={setEncKey} />
   }
@@ -115,53 +285,226 @@ export default function VaultPage() {
         </button>
       </div>
 
-      <div className="mt-6">
-        <textarea
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          placeholder="Write a note… it’s encrypted before it leaves this page."
-          rows={3}
-          className="w-full resize-y rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-emerald-400"
-        />
-        <button
-          onClick={() => void addNote()}
-          disabled={busy || !draft.trim()}
-          className="mt-2 rounded-lg bg-emerald-400 px-4 py-2 font-semibold text-neutral-950 hover:bg-emerald-300 disabled:opacity-50"
-        >
-          {busy ? 'Encrypting…' : 'Add note'}
-        </button>
+      {/* Tabs */}
+      <div className="mt-6 flex gap-1 rounded-lg border border-neutral-800 bg-neutral-900 p-1 text-sm">
+        <TabButton active={tab === 'notes'} onClick={() => setTab('notes')}>
+          My notes
+        </TabButton>
+        <TabButton active={tab === 'shared'} onClick={() => setTab('shared')}>
+          Shared{' '}
+          {received.length > 0 && <span className="text-emerald-400">({received.length})</span>}
+        </TabButton>
       </div>
 
-      <ul className="mt-8 space-y-3">
-        {notes.length === 0 && (
-          <li className="text-sm text-neutral-500">No notes yet. Add your first above.</li>
-        )}
-        {notes.map((note) => (
-          <li key={note.id} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-            <div className="flex items-start justify-between gap-4">
-              {note.text === null ? (
-                <p className="text-sm italic text-amber-400/80">
-                  [could not decrypt — wrong key]
+      {tab === 'notes' ? (
+        <>
+          <div className="mt-6">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Write a note… it’s encrypted before it leaves this page."
+              rows={3}
+              className="w-full resize-y rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-emerald-400"
+            />
+            <button
+              onClick={() => void addNote()}
+              disabled={busy || !draft.trim()}
+              className="mt-2 rounded-lg bg-emerald-400 px-4 py-2 font-semibold text-neutral-950 hover:bg-emerald-300 disabled:opacity-50"
+            >
+              {busy ? 'Encrypting…' : 'Add note'}
+            </button>
+          </div>
+
+          <ul className="mt-8 space-y-3">
+            {notes.length === 0 && (
+              <li className="text-sm text-neutral-500">No notes yet. Add your first above.</li>
+            )}
+            {notes.map((note) => (
+              <li key={note.id} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+                <div className="flex items-start justify-between gap-4">
+                  {note.text === null ? (
+                    <p className="text-sm italic text-amber-400/80">[could not decrypt — wrong key]</p>
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words text-sm text-neutral-200">
+                      {note.text}
+                    </p>
+                  )}
+                  <button
+                    onClick={() => void deleteNote(note.id)}
+                    className="shrink-0 text-xs text-neutral-500 hover:text-red-400"
+                  >
+                    Delete
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-neutral-600">
+                  {new Date(note.createdAt).toLocaleString()}
                 </p>
-              ) : (
-                <p className="whitespace-pre-wrap break-words text-sm text-neutral-200">
-                  {note.text}
-                </p>
-              )}
-              <button
-                onClick={() => void deleteNote(note.id)}
-                className="shrink-0 text-xs text-neutral-500 hover:text-red-400"
-              >
-                Delete
-              </button>
-            </div>
-            <p className="mt-2 text-xs text-neutral-600">
-              {new Date(note.createdAt).toLocaleString()}
-            </p>
-          </li>
-        ))}
-      </ul>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <SharedTab
+          fingerprint={fingerprint}
+          shareEmail={shareEmail}
+          setShareEmail={setShareEmail}
+          shareDraft={shareDraft}
+          setShareDraft={setShareDraft}
+          shareBusy={shareBusy}
+          shareError={shareError}
+          shareOk={shareOk}
+          onShare={() => void shareNote()}
+          received={received}
+          sent={sent}
+          onDelete={(id) => void deleteShare(id)}
+        />
+      )}
     </main>
+  )
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex-1 rounded-md px-3 py-1.5 font-medium transition ${
+        active ? 'bg-neutral-800 text-neutral-100' : 'text-neutral-400 hover:text-neutral-200'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function SharedTab(props: {
+  fingerprint: string | null
+  shareEmail: string
+  setShareEmail: (v: string) => void
+  shareDraft: string
+  setShareDraft: (v: string) => void
+  shareBusy: boolean
+  shareError: string | null
+  shareOk: string | null
+  onShare: () => void
+  received: DecryptedShare[]
+  sent: DecryptedShare[]
+  onDelete: (id: string) => void
+}) {
+  return (
+    <div className="mt-6 space-y-8">
+      {/* Compose */}
+      <section className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+        <h2 className="text-sm font-semibold text-neutral-200">Share a note with someone</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          It’s locked to their account in your browser — the server, and everyone else, only ever
+          sees ciphertext. They must have a Vault account first.
+        </p>
+        {props.shareError && (
+          <p className="mt-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            {props.shareError}
+          </p>
+        )}
+        {props.shareOk && (
+          <p className="mt-3 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-400">
+            {props.shareOk}
+          </p>
+        )}
+        <input
+          type="email"
+          placeholder="recipient@example.com"
+          value={props.shareEmail}
+          onChange={(e) => props.setShareEmail(e.target.value)}
+          className="mt-3 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-4 py-2.5 text-sm outline-none focus:border-emerald-400"
+        />
+        <textarea
+          value={props.shareDraft}
+          onChange={(e) => props.setShareDraft(e.target.value)}
+          placeholder="What do you want to share privately?"
+          rows={3}
+          className="mt-2 w-full resize-y rounded-lg border border-neutral-700 bg-neutral-950 px-4 py-2.5 text-sm outline-none focus:border-emerald-400"
+        />
+        <button
+          onClick={props.onShare}
+          disabled={props.shareBusy}
+          className="mt-2 rounded-lg bg-emerald-400 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-emerald-300 disabled:opacity-50"
+        >
+          {props.shareBusy ? 'Encrypting…' : 'Share securely'}
+        </button>
+      </section>
+
+      {/* Received */}
+      <section>
+        <h2 className="text-sm font-semibold text-neutral-300">Shared with you</h2>
+        <ul className="mt-3 space-y-3">
+          {props.received.length === 0 && (
+            <li className="text-sm text-neutral-500">Nothing shared with you yet.</li>
+          )}
+          {props.received.map((s) => (
+            <ShareCard key={s.id} share={s} label="from" onDelete={props.onDelete} />
+          ))}
+        </ul>
+      </section>
+
+      {/* Sent */}
+      {props.sent.length > 0 && (
+        <section>
+          <h2 className="text-sm font-semibold text-neutral-300">You shared</h2>
+          <ul className="mt-3 space-y-3">
+            {props.sent.map((s) => (
+              <ShareCard key={s.id} share={s} label="to" onDelete={props.onDelete} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {props.fingerprint && (
+        <p className="border-t border-neutral-900 pt-4 text-xs text-neutral-600">
+          Your key fingerprint:{' '}
+          <span className="font-mono text-neutral-400">{props.fingerprint}</span>. Read it aloud to a
+          contact to confirm no one swapped keys in the middle.
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ShareCard({
+  share,
+  label,
+  onDelete,
+}: {
+  share: DecryptedShare
+  label: 'from' | 'to'
+  onDelete: (id: string) => void
+}) {
+  return (
+    <li className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+      <div className="flex items-start justify-between gap-4">
+        {share.text === null ? (
+          <p className="text-sm italic text-amber-400/80">[could not decrypt]</p>
+        ) : (
+          <p className="whitespace-pre-wrap break-words text-sm text-neutral-200">{share.text}</p>
+        )}
+        <button
+          onClick={() => onDelete(share.id)}
+          className="shrink-0 text-xs text-neutral-500 hover:text-red-400"
+        >
+          Delete
+        </button>
+      </div>
+      <p className="mt-2 text-xs text-neutral-600">
+        {label} <span className="text-neutral-400">{share.peerEmail}</span> ·{' '}
+        {new Date(share.createdAt).toLocaleString()}
+      </p>
+    </li>
   )
 }
 
@@ -190,9 +533,8 @@ function UnlockForm({ onUnlocked }: { onUnlocked: (key: CryptoKey) => void }) {
     <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center px-6">
       <h1 className="mb-2 text-2xl font-bold">Unlock your vault</h1>
       <p className="mb-6 max-w-sm text-center text-sm text-neutral-400">
-        You&apos;re still signed in, but your encryption key isn&apos;t held in
-        memory after a refresh. Re-enter your password to decrypt — it stays in
-        this browser.
+        You&apos;re still signed in, but your encryption key isn&apos;t held in memory after a
+        refresh. Re-enter your password to decrypt — it stays in this browser.
       </p>
       <form onSubmit={submit} className="w-full max-w-sm space-y-3">
         {error && <p className="text-sm text-red-400">{error}</p>}

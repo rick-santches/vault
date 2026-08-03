@@ -47,6 +47,33 @@ password + email
   `{ iv, ciphertext }` as base64.
 - Only the native Web Crypto API is used. No third-party crypto libraries.
 
+## Sharing a note with one other person
+
+You can share a note so that **exactly one other Vault user** can read it — and
+no one else, the server included.
+
+```
+each user has an ECDH P-256 keypair:
+   publicKey   → stored on the server in the clear (it's public)
+   privateKey  → AES-GCM-wrapped with your own encKey, THEN stored → server can't use it
+
+share A → B:   ECDH(A_private, B_public)  ─┐
+                                            ├─ identical shared secret → AES-256-GCM key
+open  at B:    ECDH(B_private, A_public)  ─┘   → decrypt in B's browser
+```
+
+- The keypair is generated in the browser on first visit. The private key is
+  wrapped with your `encKey` before upload, so — exactly like your notes — the
+  server stores a private key it can never unwrap.
+- To share, your browser fetches the recipient's **public** key and derives a
+  pairwise AES key locally; the server only ever receives `{ iv, ciphertext }`.
+- The pairwise key is symmetric: both people derive the same key from their own
+  private key + the other's public key, and nobody else can.
+- **Key-distribution caveat:** the server hands out public keys, so a malicious
+  server could substitute one and machine-in-the-middle a share. That's why the
+  Shared tab shows a **key fingerprint** — two people can read it to each other
+  out of band (like Signal's safety numbers) to confirm no key was swapped.
+
 ## What's production-ready vs. a demo shortcut
 
 **Real security (keep it):**
@@ -91,10 +118,10 @@ about this in any marketing.
 ## Structure
 
 ```
-lib/crypto.ts        the zero-knowledge core (Web Crypto only)
+lib/crypto.ts        the zero-knowledge core: note keys + ECDH sharing (Web Crypto only)
 lib/session.ts       JWT session cookie (jose)
 lib/rate-limit.ts    in-memory auth throttle
-app/api/*            signup/login/logout/me + notes CRUD (server sees only ciphertext)
-app/vault/page.tsx   decrypts in-browser; handles the refresh/unlock case honestly
+app/api/*            signup/login/logout/me, notes CRUD, keys + shares (server sees only ciphertext)
+app/vault/page.tsx   decrypts in-browser; My notes + Shared tabs; refresh/unlock handled honestly
 components/*          key context (in-memory encKey) + shared auth form
 ```
