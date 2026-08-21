@@ -1,0 +1,15 @@
+{
+  "_comment": "Both lists are the SAME four ground corners, in the SAME order. src_pixels: where each corner lands in a still frame from THIS camera. dst_meters: where it is on the ground, tape-measured, in metres, origin anywhere you like.",
+  "src_pixels": [
+    [120, 480],
+    [1150, 480],
+    [980, 260],
+    [300, 260]
+  ],
+  "dst_meters": [
+    [0, 0],
+    [10, 0],
+    [10, 6],
+    [0, 6]
+  ]
+}

@@ -1,0 +1,10 @@
+# Detection + tracking
+ultralytics>=8.3
+# Pulls in torch; on a Raspberry Pi install the ARM wheel first.
+
+# opencv-python ships the GUI (cv2.imshow) needed for the preview window.
+# On a headless server swap this for opencv-python-headless and run with
+# --no-display -- the script degrades gracefully either way.
+opencv-python>=4.8
+
+numpy>=1.24
