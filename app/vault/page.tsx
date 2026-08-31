@@ -212,6 +212,31 @@ export default function VaultPage() {
     setNotes((prev) => prev.filter((n) => n.id !== id))
   }
 
+  function exportNotes(): void {
+    // A browser-side backup. Everything is already decrypted in memory here, so
+    // the plaintext file is assembled locally and never touches the network —
+    // the honest safety net for a product with no password reset.
+    const decrypted = notes.filter((n) => n.text !== null)
+    if (decrypted.length === 0) return
+    const stamp = new Date().toISOString().slice(0, 10)
+    const header =
+      `Vault backup — ${decrypted.length} note${decrypted.length === 1 ? '' : 's'} — ` +
+      `${new Date().toLocaleString()}\n` +
+      `Decrypted in your browser. Keep this file somewhere safe.\n`
+    const body = decrypted
+      .map((n) => `\n${'─'.repeat(40)}\n${new Date(n.createdAt).toLocaleString()}\n\n${n.text}\n`)
+      .join('')
+    const blob = new Blob([header + body], { type: 'text/plain;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `vault-notes-${stamp}.txt`
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  }
+
   function copyNote(note: DecryptedNote): void {
     if (note.text === null || !navigator.clipboard) return
     void navigator.clipboard.writeText(note.text).then(() => {
@@ -373,12 +398,21 @@ export default function VaultPage() {
                 placeholder="Search your notes…"
                 className="w-full rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-2.5 text-sm outline-none focus:border-emerald-400"
               />
-              <p className="mt-2 text-xs text-neutral-600">
-                {query
-                  ? `${visibleNotes.length} of ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`
-                  : `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`}{' '}
-                · searched right here in your browser — we never see your query.
-              </p>
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <p className="text-xs text-neutral-600">
+                  {query
+                    ? `${visibleNotes.length} of ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`
+                    : `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`}{' '}
+                  · searched in your browser — we never see your query.
+                </p>
+                <button
+                  onClick={exportNotes}
+                  title="Download a decrypted backup — stays on your device"
+                  className="shrink-0 text-xs text-neutral-500 hover:text-emerald-400"
+                >
+                  Export ↓
+                </button>
+              </div>
             </div>
           )}
 
