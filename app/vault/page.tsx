@@ -47,6 +47,9 @@ interface DecryptedShare {
 
 type Tab = 'notes' | 'shared'
 
+// Drop the in-memory keys after this much inactivity, like a password manager.
+const IDLE_LOCK_MS = 15 * 60 * 1000
+
 export default function VaultPage() {
   const router = useRouter()
   const { encKey, setEncKey } = useEncKey()
@@ -191,6 +194,29 @@ export default function VaultPage() {
   useEffect(() => {
     if (privateKey) void loadShares(privateKey)
   }, [privateKey, loadShares])
+
+  // Auto-lock: after IDLE_LOCK_MS with no activity, drop the in-memory keys.
+  // The page then falls through to the unlock screen (same as logout), so a
+  // walk-away doesn't leave notes readable. Nothing is persisted or sent.
+  useEffect(() => {
+    if (!encKey) return
+    let timer: ReturnType<typeof setTimeout>
+    const lock = () => {
+      setEncKey(null)
+      setPrivateKey(null)
+    }
+    const reset = () => {
+      clearTimeout(timer)
+      timer = setTimeout(lock, IDLE_LOCK_MS)
+    }
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'] as const
+    events.forEach((e) => window.addEventListener(e, reset, { passive: true }))
+    reset()
+    return () => {
+      clearTimeout(timer)
+      events.forEach((e) => window.removeEventListener(e, reset))
+    }
+  }, [encKey, setEncKey])
 
   async function addNote(): Promise<void> {
     if (!encKey || !draft.trim()) return
@@ -364,12 +390,17 @@ export default function VaultPage() {
         <h1 className="text-2xl font-bold">
           <VaultMark size={30} withWord />
         </h1>
-        <button
-          onClick={() => void logout()}
-          className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm hover:border-neutral-500"
-        >
-          Lock &amp; sign out
-        </button>
+        <div className="flex items-center gap-3">
+          <span className="hidden text-xs text-neutral-600 sm:inline">
+            Auto-locks after 15 min idle
+          </span>
+          <button
+            onClick={() => void logout()}
+            className="rounded-lg border border-neutral-700 px-3 py-1.5 text-sm hover:border-neutral-500"
+          >
+            Lock &amp; sign out
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
