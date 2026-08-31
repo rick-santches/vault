@@ -55,6 +55,8 @@ export default function VaultPage() {
   const [busy, setBusy] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState('')
+  const [query, setQuery] = useState('')
+  const [copiedId, setCopiedId] = useState<string | null>(null)
 
   // Sharing keypair (private key held in memory only, like encKey)
   const [privateKey, setPrivateKey] = useState<CryptoKey | null>(null)
@@ -210,6 +212,14 @@ export default function VaultPage() {
     setNotes((prev) => prev.filter((n) => n.id !== id))
   }
 
+  function copyNote(note: DecryptedNote): void {
+    if (note.text === null || !navigator.clipboard) return
+    void navigator.clipboard.writeText(note.text).then(() => {
+      setCopiedId(note.id)
+      setTimeout(() => setCopiedId((cur) => (cur === note.id ? null : cur)), 1400)
+    })
+  }
+
   function startEdit(note: DecryptedNote): void {
     if (note.text === null) return
     setEditingId(note.id)
@@ -305,6 +315,11 @@ export default function VaultPage() {
     return <UnlockForm onUnlocked={setEncKey} />
   }
 
+  const q = query.trim().toLowerCase()
+  const visibleNotes = q
+    ? notes.filter((n) => (n.text ?? '').toLowerCase().includes(q))
+    : notes
+
   return (
     <main className="mx-auto max-w-2xl px-6 py-12">
       <div className="flex items-center justify-between">
@@ -349,11 +364,32 @@ export default function VaultPage() {
             </button>
           </div>
 
-          <ul className="mt-8 space-y-3">
+          {notes.length > 0 && (
+            <div className="mt-8">
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search your notes…"
+                className="w-full rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-2.5 text-sm outline-none focus:border-emerald-400"
+              />
+              <p className="mt-2 text-xs text-neutral-600">
+                {query
+                  ? `${visibleNotes.length} of ${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`
+                  : `${notes.length} ${notes.length === 1 ? 'note' : 'notes'}`}{' '}
+                · searched right here in your browser — we never see your query.
+              </p>
+            </div>
+          )}
+
+          <ul className="mt-4 space-y-3">
             {notes.length === 0 && (
               <li className="text-sm text-neutral-500">No notes yet. Add your first above.</li>
             )}
-            {notes.map((note) => (
+            {notes.length > 0 && visibleNotes.length === 0 && (
+              <li className="text-sm text-neutral-500">No notes match “{query}”.</li>
+            )}
+            {visibleNotes.map((note) => (
               <li key={note.id} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
                 {editingId === note.id ? (
                   <div>
@@ -391,6 +427,18 @@ export default function VaultPage() {
                         </p>
                       )}
                       <div className="flex shrink-0 gap-3 text-xs">
+                        {note.text !== null && (
+                          <button
+                            onClick={() => copyNote(note)}
+                            className={
+                              copiedId === note.id
+                                ? 'text-emerald-400'
+                                : 'text-neutral-500 hover:text-emerald-400'
+                            }
+                          >
+                            {copiedId === note.id ? 'Copied' : 'Copy'}
+                          </button>
+                        )}
                         {note.text !== null && (
                           <button
                             onClick={() => startEdit(note)}
