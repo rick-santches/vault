@@ -64,6 +64,7 @@ export default function VaultPage() {
   const [editDraft, setEditDraft] = useState('')
   const [query, setQuery] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
 
   // Sharing keypair (private key held in memory only, like encKey)
   const [privateKey, setPrivateKey] = useState<CryptoKey | null>(null)
@@ -563,12 +564,32 @@ export default function VaultPage() {
                             Edit
                           </button>
                         )}
-                        <button
-                          onClick={() => void deleteNote(note.id)}
-                          className="text-neutral-500 hover:text-red-400"
-                        >
-                          Delete
-                        </button>
+                        {confirmDeleteId === note.id ? (
+                          <>
+                            <button
+                              onClick={() => {
+                                setConfirmDeleteId(null)
+                                void deleteNote(note.id)
+                              }}
+                              className="font-semibold text-red-400 hover:text-red-300"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setConfirmDeleteId(null)}
+                              className="text-neutral-500 hover:text-neutral-300"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmDeleteId(note.id)}
+                            className="text-neutral-500 hover:text-red-400"
+                          >
+                            Delete
+                          </button>
+                        )}
                       </div>
                     </div>
                     <p className="mt-2 text-xs text-neutral-600">
