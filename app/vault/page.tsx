@@ -18,12 +18,14 @@ import {
 
 interface RawNote extends EncryptedBlob {
   id: string
+  pinned: boolean
   createdAt: string
   updatedAt: string
 }
 
 interface DecryptedNote {
   id: string
+  pinned: boolean
   createdAt: string
   updatedAt: string
   text: string | null // null = couldn't decrypt with the current key
@@ -95,9 +97,9 @@ export default function VaultPage() {
     const decrypted = await Promise.all(
       raw.map(async (n) => {
         try {
-          return { id: n.id, createdAt: n.createdAt, updatedAt: n.updatedAt, text: await decryptText(key, n) }
+          return { id: n.id, pinned: n.pinned, createdAt: n.createdAt, updatedAt: n.updatedAt, text: await decryptText(key, n) }
         } catch {
-          return { id: n.id, createdAt: n.createdAt, updatedAt: n.updatedAt, text: null }
+          return { id: n.id, pinned: n.pinned, createdAt: n.createdAt, updatedAt: n.updatedAt, text: null }
         }
       }),
     )
@@ -237,6 +239,15 @@ export default function VaultPage() {
     a.click()
     a.remove()
     URL.revokeObjectURL(url)
+  }
+
+  async function togglePin(note: DecryptedNote): Promise<void> {
+    const res = await fetch(`/api/notes/${note.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pinned: !note.pinned }),
+    })
+    if (res.ok && encKey) await loadNotes(encKey)
   }
 
   function copyNote(note: DecryptedNote): void {
@@ -439,7 +450,12 @@ export default function VaultPage() {
               <li className="text-sm text-neutral-500">No notes match “{query}”.</li>
             )}
             {visibleNotes.map((note) => (
-              <li key={note.id} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+              <li
+                key={note.id}
+                className={`rounded-lg border bg-neutral-900 p-4 ${
+                  note.pinned ? 'border-emerald-500/30' : 'border-neutral-800'
+                }`}
+              >
                 {editingId === note.id ? (
                   <div>
                     <textarea
@@ -485,6 +501,17 @@ export default function VaultPage() {
                         </p>
                       )}
                       <div className="flex shrink-0 gap-3 text-xs">
+                        <button
+                          onClick={() => void togglePin(note)}
+                          title={note.pinned ? 'Unpin' : 'Pin to top'}
+                          className={
+                            note.pinned
+                              ? 'text-emerald-400'
+                              : 'text-neutral-500 hover:text-emerald-400'
+                          }
+                        >
+                          {note.pinned ? 'Pinned' : 'Pin'}
+                        </button>
                         {note.text !== null && (
                           <button
                             onClick={() => copyNote(note)}
@@ -514,6 +541,7 @@ export default function VaultPage() {
                       </div>
                     </div>
                     <p className="mt-2 text-xs text-neutral-600">
+                      {note.pinned && <span className="text-emerald-400/80">📌 Pinned · </span>}
                       {new Date(note.createdAt).toLocaleString()}
                       {new Date(note.updatedAt).getTime() - new Date(note.createdAt).getTime() >
                         2000 && (

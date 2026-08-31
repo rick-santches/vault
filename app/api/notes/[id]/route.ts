@@ -29,6 +29,27 @@ export async function PUT(
   return NextResponse.json({ ok: true })
 }
 
+// Toggle the pinned flag — metadata only, no ciphertext involved.
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+): Promise<NextResponse> {
+  const userId = await getSessionUserId()
+  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const { id } = await params
+  const body = (await request.json().catch(() => null)) as { pinned?: unknown } | null
+  if (typeof body?.pinned !== 'boolean') {
+    return NextResponse.json({ error: 'Invalid request' }, { status: 400 })
+  }
+
+  const result = await prisma.note.updateMany({ where: { id, userId }, data: { pinned: body.pinned } })
+  if (result.count === 0) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+  return NextResponse.json({ ok: true })
+}
+
 export async function DELETE(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },

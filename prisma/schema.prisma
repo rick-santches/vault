@@ -36,6 +36,9 @@ model Note {
   // AES-256-GCM output, base64. The server cannot decrypt these.
   iv         String
   ciphertext String
+  // Pin important notes to the top. Metadata only — reveals nothing about
+  // content, which stays encrypted.
+  pinned     Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
