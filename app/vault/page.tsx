@@ -65,6 +65,7 @@ export default function VaultPage() {
   const [query, setQuery] = useState('')
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [expandedIds, setExpandedIds] = useState<Record<string, boolean>>({})
 
   // Sharing keypair (private key held in memory only, like encKey)
   const [privateKey, setPrivateKey] = useState<CryptoKey | null>(null)
@@ -528,9 +529,25 @@ export default function VaultPage() {
                       {note.text === null ? (
                         <p className="text-sm italic text-amber-400/80">[could not decrypt — wrong key]</p>
                       ) : (
-                        <p className="whitespace-pre-wrap break-words text-sm text-neutral-200">
-                          {note.text}
-                        </p>
+                        <div className="min-w-0 flex-1">
+                          <p
+                            className={`whitespace-pre-wrap break-words text-sm text-neutral-200 ${
+                              note.text.length > 400 && !expandedIds[note.id] ? 'line-clamp-6' : ''
+                            }`}
+                          >
+                            {note.text}
+                          </p>
+                          {note.text.length > 400 && (
+                            <button
+                              onClick={() =>
+                                setExpandedIds((m) => ({ ...m, [note.id]: !m[note.id] }))
+                              }
+                              className="mt-1 text-xs text-neutral-500 hover:text-emerald-400"
+                            >
+                              {expandedIds[note.id] ? 'Show less' : 'Show more'}
+                            </button>
+                          )}
+                        </div>
                       )}
                       <div className="flex shrink-0 gap-3 text-xs">
                         <button
