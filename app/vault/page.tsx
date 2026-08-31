@@ -53,6 +53,8 @@ export default function VaultPage() {
   const [notes, setNotes] = useState<DecryptedNote[]>([])
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDraft, setEditDraft] = useState('')
 
   // Sharing keypair (private key held in memory only, like encKey)
   const [privateKey, setPrivateKey] = useState<CryptoKey | null>(null)
@@ -208,6 +210,37 @@ export default function VaultPage() {
     setNotes((prev) => prev.filter((n) => n.id !== id))
   }
 
+  function startEdit(note: DecryptedNote): void {
+    if (note.text === null) return
+    setEditingId(note.id)
+    setEditDraft(note.text)
+  }
+
+  function cancelEdit(): void {
+    setEditingId(null)
+    setEditDraft('')
+  }
+
+  async function saveEdit(id: string): Promise<void> {
+    if (!encKey || !editDraft.trim()) return
+    setBusy(true)
+    try {
+      // Re-encrypt the edited text in the browser; the server sees only ciphertext.
+      const blob = await encryptText(encKey, editDraft.trim())
+      const res = await fetch(`/api/notes/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(blob),
+      })
+      if (res.ok) {
+        cancelEdit()
+        await loadNotes(encKey)
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function shareNote(): Promise<void> {
     setShareError(null)
     setShareOk(null)
@@ -322,24 +355,63 @@ export default function VaultPage() {
             )}
             {notes.map((note) => (
               <li key={note.id} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
-                <div className="flex items-start justify-between gap-4">
-                  {note.text === null ? (
-                    <p className="text-sm italic text-amber-400/80">[could not decrypt — wrong key]</p>
-                  ) : (
-                    <p className="whitespace-pre-wrap break-words text-sm text-neutral-200">
-                      {note.text}
+                {editingId === note.id ? (
+                  <div>
+                    <textarea
+                      value={editDraft}
+                      onChange={(e) => setEditDraft(e.target.value)}
+                      rows={3}
+                      autoFocus
+                      className="w-full resize-y rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-emerald-400"
+                    />
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        onClick={() => void saveEdit(note.id)}
+                        disabled={busy || !editDraft.trim()}
+                        className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-semibold text-neutral-950 hover:bg-emerald-300 disabled:opacity-50"
+                      >
+                        {busy ? 'Encrypting…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={cancelEdit}
+                        className="rounded-lg border border-neutral-700 px-3 py-1.5 text-xs text-neutral-300 hover:border-neutral-500"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-start justify-between gap-4">
+                      {note.text === null ? (
+                        <p className="text-sm italic text-amber-400/80">[could not decrypt — wrong key]</p>
+                      ) : (
+                        <p className="whitespace-pre-wrap break-words text-sm text-neutral-200">
+                          {note.text}
+                        </p>
+                      )}
+                      <div className="flex shrink-0 gap-3 text-xs">
+                        {note.text !== null && (
+                          <button
+                            onClick={() => startEdit(note)}
+                            className="text-neutral-500 hover:text-emerald-400"
+                          >
+                            Edit
+                          </button>
+                        )}
+                        <button
+                          onClick={() => void deleteNote(note.id)}
+                          className="text-neutral-500 hover:text-red-400"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs text-neutral-600">
+                      {new Date(note.createdAt).toLocaleString()}
                     </p>
-                  )}
-                  <button
-                    onClick={() => void deleteNote(note.id)}
-                    className="shrink-0 text-xs text-neutral-500 hover:text-red-400"
-                  >
-                    Delete
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-neutral-600">
-                  {new Date(note.createdAt).toLocaleString()}
-                </p>
+                  </>
+                )}
               </li>
             ))}
           </ul>
