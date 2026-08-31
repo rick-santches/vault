@@ -5,6 +5,22 @@ import { useRouter } from 'next/navigation'
 import { deriveKeys } from '@/lib/crypto'
 import { useEncKey } from './key-context'
 
+// A rough strength estimate — length is the biggest factor for a master
+// password (a long passphrase beats a short scramble), with a variety bonus.
+// Runs entirely in the browser; the password never leaves this page.
+function passwordStrength(pw: string): { score: number; label: string } {
+  if (!pw) return { score: 0, label: '' }
+  let score = 0
+  if (pw.length >= 10) score++
+  if (pw.length >= 14) score++
+  if (pw.length >= 20) score++
+  const variety = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length
+  if (variety >= 3) score++
+  score = Math.min(4, score)
+  const labels = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong']
+  return { score, label: labels[score] }
+}
+
 /**
  * Shared signup/login form. The password NEVER goes in a request:
  * keys are derived locally and only authKey is posted.
@@ -71,6 +87,28 @@ export function AuthForm({ mode }: { mode: 'signup' | 'login' }) {
         onChange={(e) => setPassword(e.target.value)}
         className="w-full rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-emerald-400"
       />
+      {mode === 'signup' && password.length > 0 && (
+        <div className="space-y-1">
+          <div className="flex gap-1" aria-hidden="true">
+            {[0, 1, 2, 3].map((i) => {
+              const { score } = passwordStrength(password)
+              const on = i < score
+              const color =
+                score <= 1 ? 'bg-red-500' : score === 2 ? 'bg-amber-400' : 'bg-emerald-400'
+              return (
+                <span
+                  key={i}
+                  className={`h-1 flex-1 rounded-full ${on ? color : 'bg-neutral-800'}`}
+                />
+              )
+            })}
+          </div>
+          <p className="text-xs text-neutral-500">
+            Password strength: <span className="text-neutral-300">{passwordStrength(password).label}</span>
+            {passwordStrength(password).score < 3 && ' — a long passphrase is strongest.'}
+          </p>
+        </div>
+      )}
       {mode === 'signup' && (
         <>
           <input
