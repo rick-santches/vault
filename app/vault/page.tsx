@@ -378,17 +378,30 @@ export default function VaultPage() {
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault()
+                  void addNote()
+                }
+              }}
               placeholder="Write a note… it’s encrypted before it leaves this page."
               rows={3}
               className="w-full resize-y rounded-lg border border-neutral-700 bg-neutral-900 px-4 py-3 outline-none focus:border-emerald-400"
             />
-            <button
-              onClick={() => void addNote()}
-              disabled={busy || !draft.trim()}
-              className="mt-2 rounded-lg bg-emerald-400 px-4 py-2 font-semibold text-neutral-950 hover:bg-emerald-300 disabled:opacity-50"
-            >
-              {busy ? 'Encrypting…' : 'Add note'}
-            </button>
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={() => void addNote()}
+                disabled={busy || !draft.trim()}
+                className="rounded-lg bg-emerald-400 px-4 py-2 font-semibold text-neutral-950 hover:bg-emerald-300 disabled:opacity-50"
+              >
+                {busy ? 'Encrypting…' : 'Add note'}
+              </button>
+              <span className="text-xs text-neutral-600">
+                <kbd className="rounded border border-neutral-700 px-1">⌘</kbd>/
+                <kbd className="rounded border border-neutral-700 px-1">Ctrl</kbd> +{' '}
+                <kbd className="rounded border border-neutral-700 px-1">Enter</kbd> to save
+              </span>
+            </div>
           </div>
 
           {notes.length > 0 && (
@@ -432,6 +445,15 @@ export default function VaultPage() {
                     <textarea
                       value={editDraft}
                       onChange={(e) => setEditDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                          e.preventDefault()
+                          void saveEdit(note.id)
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          cancelEdit()
+                        }
+                      }}
                       rows={3}
                       autoFocus
                       className="w-full resize-y rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2 text-sm outline-none focus:border-emerald-400"
