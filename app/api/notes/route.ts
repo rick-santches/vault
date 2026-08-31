@@ -9,7 +9,7 @@ export async function GET(): Promise<NextResponse> {
   const notes = await prisma.note.findMany({
     where: { userId },
     orderBy: { createdAt: 'desc' },
-    select: { id: true, iv: true, ciphertext: true, createdAt: true },
+    select: { id: true, iv: true, ciphertext: true, createdAt: true, updatedAt: true },
   })
   return NextResponse.json({ notes })
 }

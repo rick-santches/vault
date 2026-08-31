@@ -19,11 +19,13 @@ import {
 interface RawNote extends EncryptedBlob {
   id: string
   createdAt: string
+  updatedAt: string
 }
 
 interface DecryptedNote {
   id: string
   createdAt: string
+  updatedAt: string
   text: string | null // null = couldn't decrypt with the current key
 }
 
@@ -93,9 +95,9 @@ export default function VaultPage() {
     const decrypted = await Promise.all(
       raw.map(async (n) => {
         try {
-          return { id: n.id, createdAt: n.createdAt, text: await decryptText(key, n) }
+          return { id: n.id, createdAt: n.createdAt, updatedAt: n.updatedAt, text: await decryptText(key, n) }
         } catch {
-          return { id: n.id, createdAt: n.createdAt, text: null }
+          return { id: n.id, createdAt: n.createdAt, updatedAt: n.updatedAt, text: null }
         }
       }),
     )
@@ -491,6 +493,13 @@ export default function VaultPage() {
                     </div>
                     <p className="mt-2 text-xs text-neutral-600">
                       {new Date(note.createdAt).toLocaleString()}
+                      {new Date(note.updatedAt).getTime() - new Date(note.createdAt).getTime() >
+                        2000 && (
+                        <span className="text-neutral-500">
+                          {' '}
+                          · edited {new Date(note.updatedAt).toLocaleString()}
+                        </span>
+                      )}
                     </p>
                   </>
                 )}
