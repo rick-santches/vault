@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useEncKey } from '@/components/key-context'
+import { VaultMark } from '@/components/vault-mark'
 import {
   decryptFromPeer,
   decryptText,
@@ -275,7 +276,7 @@ export default function VaultPage() {
     <main className="mx-auto max-w-2xl px-6 py-12">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">
-          <span className="text-emerald-400">Vault</span>
+          <VaultMark size={30} withWord />
         </h1>
         <button
           onClick={() => void logout()}
@@ -531,7 +532,8 @@ function UnlockForm({ onUnlocked }: { onUnlocked: (key: CryptoKey) => void }) {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-xl flex-col items-center justify-center px-6">
-      <h1 className="mb-2 text-2xl font-bold">Unlock your vault</h1>
+      <VaultMark size={44} />
+      <h1 className="mb-2 mt-4 text-2xl font-bold">Unlock your vault</h1>
       <p className="mb-6 max-w-sm text-center text-sm text-neutral-400">
         You&apos;re still signed in, but your encryption key isn&apos;t held in memory after a
         refresh. Re-enter your password to decrypt — it stays in this browser.
