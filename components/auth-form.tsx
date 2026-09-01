@@ -17,6 +17,10 @@ function passwordStrength(pw: string): { score: number; label: string } {
   const variety = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length
   if (variety >= 3) score++
   score = Math.min(4, score)
+  // Length alone shouldn't earn a green rating: a long run of one or two
+  // characters ("aaaaaaaaaaaa") has almost no entropy. Cap it by distinct chars.
+  const distinct = new Set(pw).size
+  if (distinct <= 4) score = Math.min(score, 1)
   const labels = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong']
   return { score, label: labels[score] }
 }
@@ -66,13 +70,17 @@ export function AuthForm({ mode }: { mode: 'signup' | 'login' }) {
   return (
     <form onSubmit={submit} className="w-full max-w-sm space-y-3">
       {error && (
-        <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400">
+        <p
+          role="alert"
+          className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-2 text-sm text-red-400"
+        >
           {error}
         </p>
       )}
       <input
         type="email"
         required
+        aria-label="Email"
         placeholder="you@example.com"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
@@ -81,6 +89,7 @@ export function AuthForm({ mode }: { mode: 'signup' | 'login' }) {
       <input
         type="password"
         required
+        aria-label="Master password"
         minLength={mode === 'signup' ? 10 : 1}
         placeholder="Master password"
         value={password}
@@ -114,6 +123,7 @@ export function AuthForm({ mode }: { mode: 'signup' | 'login' }) {
           <input
             type="password"
             required
+            aria-label="Confirm password"
             placeholder="Confirm password"
             value={confirm}
             onChange={(e) => setConfirm(e.target.value)}
@@ -128,6 +138,7 @@ export function AuthForm({ mode }: { mode: 'signup' | 'login' }) {
       <button
         type="submit"
         disabled={busy}
+        aria-busy={busy}
         className="w-full rounded-lg bg-emerald-400 px-4 py-3 font-semibold text-neutral-950 hover:bg-emerald-300 disabled:opacity-50"
       >
         {busy ? 'Deriving keys…' : mode === 'signup' ? 'Create vault' : 'Unlock'}

@@ -839,10 +839,23 @@ function UnlockForm({ onUnlocked }: { onUnlocked: (key: CryptoKey) => void }) {
     setBusy(true)
     setError(null)
     try {
-      const { encKey } = await deriveKeys(email, password)
+      const { authKey, encKey } = await deriveKeys(email, password)
+      // Verify the password server-side (same bcrypt gate as login) BEFORE using
+      // the derived key. Otherwise a wrong password yields a wrong encKey that
+      // the keypair bootstrap would persist a private key under — write-once, so
+      // it permanently bricks sharing. This also refreshes the session cookie.
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, authKey }),
+      })
+      if (!res.ok) {
+        setError('Email or password is incorrect.')
+        return
+      }
       onUnlocked(encKey)
     } catch {
-      setError('Could not derive key.')
+      setError('Could not unlock. Try again.')
     } finally {
       setBusy(false)
     }

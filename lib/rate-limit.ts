@@ -20,5 +20,15 @@ export function rateLimited(ip: string): boolean {
 }
 
 export function clientIp(request: Request): string {
-  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'local'
+  // Prefer the platform-set client IP, which the client cannot spoof. On Vercel
+  // `x-vercel-forwarded-for` / `x-real-ip` are set by the proxy; the leftmost of
+  // a raw `x-forwarded-for` is client-controlled, so it's the last resort. When
+  // no trusted IP is available we key everyone to one shared bucket ('unknown')
+  // — that can over-limit but never lets a caller escape the limit by rotating a
+  // forged header.
+  const trusted =
+    request.headers.get('x-vercel-forwarded-for') ?? request.headers.get('x-real-ip')
+  if (trusted) return trusted.split(',')[0]!.trim()
+  const fwd = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  return fwd || 'unknown'
 }
