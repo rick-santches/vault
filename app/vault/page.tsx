@@ -91,6 +91,11 @@ export default function VaultPage() {
         if (!d.authenticated) router.replace('/login')
         else setChecking(false)
       })
+      .catch(() => {
+        // A transient network error must not strand the page on "Checking
+        // session…" forever — send the user to login to retry.
+        if (active) router.replace('/login')
+      })
     return () => {
       active = false
     }

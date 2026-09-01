@@ -208,7 +208,7 @@ export function Landing() {
               <b>Web Crypto</b> only — no third-party crypto
             </span>
             <span className="chip">
-              <b>AES-256-GCM</b> · per-note key
+              <b>AES-256-GCM</b> · fresh IV per note
             </span>
             <span className="chip">
               <b>310k</b> PBKDF2 rounds
