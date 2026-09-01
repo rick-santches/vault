@@ -40,7 +40,9 @@ model Note {
   // content, which stays encrypted.
   pinned     Boolean  @default(false)
   createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  // NOT @updatedAt: it's set explicitly only on a content edit (PUT), so that
+  // metadata-only writes like pinning don't make a note read as "edited".
+  updatedAt  DateTime @default(now())
 }
 
 // A note shared from one user to another. The ciphertext is locked with a

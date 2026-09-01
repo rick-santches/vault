@@ -22,7 +22,12 @@ export async function PUT(
   }
 
   // updateMany scoped to the session user: a foreign id updates nothing.
-  const result = await prisma.note.updateMany({ where: { id, userId }, data: { iv, ciphertext } })
+  // Bump updatedAt explicitly here (the column is no longer @updatedAt) so only
+  // a real content edit marks the note "edited" — pinning must not.
+  const result = await prisma.note.updateMany({
+    where: { id, userId },
+    data: { iv, ciphertext, updatedAt: new Date() },
+  })
   if (result.count === 0) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
