@@ -23,7 +23,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     | null
   const iv = typeof body?.iv === 'string' ? body.iv : ''
   const ciphertext = typeof body?.ciphertext === 'string' ? body.ciphertext : ''
-  if (!iv || !ciphertext || ciphertext.length > 200_000) {
+  if (!iv || iv.length > 64 || !ciphertext || ciphertext.length > 200_000) {
     return NextResponse.json({ error: 'Invalid note' }, { status: 400 })
   }
 

@@ -258,8 +258,10 @@ export default function VaultPage() {
   }
 
   async function deleteNote(id: string): Promise<void> {
-    await fetch(`/api/notes/${id}`, { method: 'DELETE' })
-    setNotes((prev) => prev.filter((n) => n.id !== id))
+    // Only drop it from the UI if the server actually deleted it — otherwise a
+    // failed request would hide a note that's still stored.
+    const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' })
+    if (res.ok) setNotes((prev) => prev.filter((n) => n.id !== id))
   }
 
   function exportNotes(): void {
@@ -377,7 +379,8 @@ export default function VaultPage() {
   }
 
   async function deleteShare(id: string): Promise<void> {
-    await fetch(`/api/shares/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/shares/${id}`, { method: 'DELETE' })
+    if (!res.ok) return
     setReceived((prev) => prev.filter((s) => s.id !== id))
     setSent((prev) => prev.filter((s) => s.id !== id))
   }

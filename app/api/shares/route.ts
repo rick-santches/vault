@@ -66,7 +66,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const iv = typeof body?.iv === 'string' ? body.iv : ''
   const ciphertext = typeof body?.ciphertext === 'string' ? body.ciphertext : ''
 
-  if (!toEmail.includes('@') || !iv || !ciphertext || ciphertext.length > 200_000) {
+  if (!toEmail.includes('@') || !iv || iv.length > 64 || !ciphertext || ciphertext.length > 200_000) {
     return NextResponse.json({ error: 'Invalid share' }, { status: 400 })
   }
 
