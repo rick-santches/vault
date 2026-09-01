@@ -43,6 +43,7 @@ interface DecryptedShare {
   createdAt: string
   peerEmail: string
   text: string | null
+  peerFingerprint: string | null
 }
 
 type Tab = 'notes' | 'shared'
@@ -175,14 +176,16 @@ export default function VaultPage() {
       Promise.all(
         list.map(async (s) => {
           let text: string | null = null
+          let peerFingerprint: string | null = null
           if (s.peerPublicKey) {
+            peerFingerprint = await keyFingerprint(s.peerPublicKey)
             try {
               text = await decryptFromPeer(priv, s.peerPublicKey, s)
             } catch {
               text = null
             }
           }
-          return { id: s.id, createdAt: s.createdAt, peerEmail: s.peerEmail, text }
+          return { id: s.id, createdAt: s.createdAt, peerEmail: s.peerEmail, text, peerFingerprint }
         }),
       )
     setReceived(await decode(data.received))
@@ -204,8 +207,23 @@ export default function VaultPage() {
     if (!encKey) return
     let timer: ReturnType<typeof setTimeout>
     const lock = () => {
+      // Clear the KEYS *and* every piece of decrypted plaintext held in state.
+      // Otherwise the notes stay in memory and re-render the moment any password
+      // "unlocks" (UnlockForm derives a key locally and can't reject a wrong
+      // one), making the lock cosmetic.
       setEncKey(null)
       setPrivateKey(null)
+      setNotes([])
+      setReceived([])
+      setSent([])
+      setDraft('')
+      setEditingId(null)
+      setEditDraft('')
+      setConfirmDeleteId(null)
+      setExpandedIds({})
+      setShareDraft('')
+      setShareEmail('')
+      setShareOk(null)
     }
     const reset = () => {
       clearTimeout(timer)
@@ -221,7 +239,7 @@ export default function VaultPage() {
   }, [encKey, setEncKey])
 
   async function addNote(): Promise<void> {
-    if (!encKey || !draft.trim()) return
+    if (!encKey || !draft.trim() || busy) return
     setBusy(true)
     try {
       const blob = await encryptText(encKey, draft.trim())
@@ -298,7 +316,7 @@ export default function VaultPage() {
   }
 
   async function saveEdit(id: string): Promise<void> {
-    if (!encKey || !editDraft.trim()) return
+    if (!encKey || !editDraft.trim() || busy) return
     setBusy(true)
     try {
       // Re-encrypt the edited text in the browser; the server sees only ciphertext.
@@ -345,8 +363,11 @@ export default function VaultPage() {
         setShareError(error ?? 'Could not share.')
         return
       }
+      const fp = await keyFingerprint(publicKey)
       setShareDraft('')
-      setShareOk(`Shared with ${to}. Only they can open it.`)
+      // Surface the recipient key fingerprint so the sender can confirm it out
+      // of band — the only defense against the server handing back a swapped key.
+      setShareOk(`Shared with ${to}. Their key fingerprint is ${fp} — confirm it with them.`)
       await loadShares(privateKey)
     } catch {
       setShareError('Something went wrong.')
@@ -787,6 +808,13 @@ function ShareCard({
         {label} <span className="text-neutral-400">{share.peerEmail}</span> ·{' '}
         {new Date(share.createdAt).toLocaleString()}
       </p>
+      {share.peerFingerprint && (
+        <p className="mt-1 text-xs text-neutral-600">
+          Their key:{' '}
+          <span className="font-mono text-neutral-500">{share.peerFingerprint}</span> — confirm it
+          matches theirs.
+        </p>
+      )}
     </li>
   )
 }
